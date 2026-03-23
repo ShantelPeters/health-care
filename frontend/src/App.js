@@ -18,12 +18,14 @@ import {
   Award,
   Database,
   Lock,
-  Cpu
+  Cpu,
+  CreditCard as CreditIcon
 } from 'lucide-react';
 import './App.css';
 import MedicalRecordManager from './components/MedicalRecordManager';
 import MFASystem from './components/MFASystem';
 import ClaimEngine from './components/ClaimEngine';
+import PaymentGateways from './components/PaymentGateways';
 
 // Contract ABIs (simplified for demo)
 const HEALTHCARE_DRIPS_ABI = [
@@ -307,6 +309,13 @@ function App() {
               <Cpu className="w-4 h-4" />
               Engine
             </button>
+            <button 
+              onClick={() => setActiveTab('payments')}
+              className={activeTab === 'payments' ? 'active' : ''}
+            >
+              <CreditIcon className="w-4 h-4" />
+              Payments
+            </button>
           </nav>
           
           <div className="wallet-section">
@@ -340,6 +349,7 @@ function App() {
             {activeTab === 'records' && <MedicalRecordManager account={account} contract={contract} />}
             {activeTab === 'security' && <MFASystem account={account} contract={contract} />}
             {activeTab === 'engine' && <ClaimEngine account={account} contract={contract} />}
+            {activeTab === 'payments' && <PaymentGateways account={account} contract={contract} />}
           </>
         )}
       </main>

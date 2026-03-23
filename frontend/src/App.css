@@ -436,8 +436,46 @@ body {
 .contributors,
 .medical-record-manager,
 .mfa-system,
-.claim-engine {
+.claim-engine,
+.payment-gateways {
   animation: fadeIn 0.6s ease-out;
+}
+
+/* Payment Gateway Specific Styles */
+.payment-gateways .bg-white {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+}
+
+.payment-gateways .shadow-xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.05);
+}
+
+.payment-gateways .hover\:shadow-md:hover {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+}
+
+.payment-gateways .bg-slate-900 {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.payment-gateways .bg-slate-100 {
+  background: rgba(241, 245, 249, 0.82);
+}
+
+.payment-gateways .border-2 {
+    border-width: 2px;
+}
+
+.payment-gateways .letter-spacing-wide {
+    letter-spacing: 0.1em;
+}
+
+/* Better mobile padding for payments */
+@media (max-width: 640px) {
+    .payment-gateways {
+        padding: 1rem;
+    }
 }
 
 /* Claim Engine Specific Styles */

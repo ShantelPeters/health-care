@@ -45,6 +45,48 @@ pub enum IssueStatus {
 
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum Currency {
+    USD = 0,
+    EUR = 1,
+    GBP = 2,
+    XLM = 3,
+    USDC = 4,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum PaymentMethod {
+    Stripe = 0,
+    PayPal = 1,
+    Crypto = 2,
+    BankTransfer = 3,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum TransactionStatus {
+    Pending = 0,
+    Success = 1,
+    Failed = 2,
+    Refunded = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Transaction {
+    pub id: u64,
+    pub user: Address,
+    pub amount: i128,
+    pub currency: Currency,
+    pub method: PaymentMethod,
+    pub status: TransactionStatus,
+    pub gateway_ref: String, // ID from Stripe/PayPal
+    pub timestamp: u64,
+    pub retries: u32,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum ContributorLevel {
     Junior = 0,
     Intermediate = 1,
@@ -202,6 +244,7 @@ impl HealthcareDrips {
         env.storage().instance().set(&Symbol::short("next_issue_id"), &1u64);
         env.storage().instance().set(&Symbol::short("next_record_id"), &1u64);
         env.storage().instance().set(&Symbol::short("next_rule_id"), &1u64);
+        env.storage().instance().set(&Symbol::short("next_tx_id"), &1u64);
         
         // Initialize processing stats
         let stats = ClaimProcessingStats {
@@ -1001,6 +1044,82 @@ impl HealthcareDrips {
         rules
     }
     
+    // ========== PAYMENT GATEWAYS ==========
+    
+    pub fn record_payment(
+        env: &Env,
+        user: Address,
+        amount: i128,
+        currency: Currency,
+        method: PaymentMethod,
+        gateway_ref: String,
+    ) -> Result<u64, HealthcareDripsError> {
+        user.require_auth();
+        
+        let next_id = Self::get_next_tx_id(env);
+        let tx = Transaction {
+            id: next_id,
+            user: user.clone(),
+            amount,
+            currency,
+            method,
+            status: TransactionStatus::Success,
+            gateway_ref,
+            timestamp: env.ledger().timestamp(),
+            retries: 0,
+        };
+        
+        env.storage().instance().set(&Symbol::new(&env, &format!("tx_{}", next_id)), &tx);
+        
+        // Add to user transactions
+        let mut user_txs: Vec<u64> = env.storage().instance()
+            .get(&Symbol::new(&env, &format!("user_txs_{}", user)))
+            .unwrap_or(Vec::new(env));
+        user_txs.push_back(next_id);
+        env.storage().instance().set(&Symbol::new(&env, &format!("user_txs_{}", user)), &user_txs);
+        
+        Ok(next_id)
+    }
+    
+    pub fn reconcile_transaction(
+        env: &Env,
+        tx_id: u64,
+        status: TransactionStatus,
+        caller: Address,
+    ) -> Result<(), HealthcareDripsError> {
+        if !Self::has_role(env, caller, APPROVER) {
+            return Err(HealthcareDripsError::Unauthorized);
+        }
+        
+        let tx_key = Symbol::new(&env, &format!("tx_{}", tx_id));
+        let mut tx: Transaction = env.storage().instance()
+            .get(&tx_key)
+            .ok_or(HealthcareDripsError::InvalidIssueId)?; // Using InvalidIssueId as generic not found
+            
+        tx.status = status;
+        if status == TransactionStatus::Failed {
+            tx.retries += 1;
+        }
+        
+        env.storage().instance().set(&tx_key, &tx);
+        
+        Ok(())
+    }
+    
+    pub fn get_user_transactions(env: &Env, user: Address) -> Vec<Transaction> {
+        let tx_ids: Vec<u64> = env.storage().instance()
+            .get(&Symbol::new(&env, &format!("user_txs_{}", user)))
+            .unwrap_or(Vec::new(env));
+            
+        let mut txs = Vec::new(env);
+        for id in tx_ids.iter() {
+            if let Some(tx) = env.storage().instance().get::<_, Transaction>(&Symbol::new(&env, &format!("tx_{}", id))) {
+                txs.push_back(tx);
+            }
+        }
+        txs
+    }
+    
     // ========== HELPER FUNCTIONS ==========
     
     fn get_next_drip_id(env: &Env) -> u64 {
@@ -1026,6 +1145,13 @@ impl HealthcareDrips {
     
     fn get_next_rule_id(env: &Env) -> u64 {
         let key = Symbol::short("next_rule_id");
+        let next_id = env.storage().instance().get(&key).unwrap_or(1u64);
+        env.storage().instance().set(&key, &(next_id + 1));
+        next_id
+    }
+    
+    fn get_next_tx_id(env: &Env) -> u64 {
+        let key = Symbol::short("next_tx_id");
         let next_id = env.storage().instance().get(&key).unwrap_or(1u64);
         env.storage().instance().set(&key, &(next_id + 1));
         next_id
