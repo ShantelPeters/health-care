@@ -29,6 +29,7 @@ import ClaimEngine from './components/ClaimEngine';
 import PaymentGateways from './components/PaymentGateways';
 import PatientDashboard from './components/PatientDashboard';
 import EmergencyAccess from './components/EmergencyAccess';
+import TelemedicineDashboard from './components/Telemedicine/TelemedicineDashboard';
 
 // Contract ABIs (simplified for demo)
 const HEALTHCARE_DRIPS_ABI = [
@@ -301,6 +302,13 @@ function App() {
               Contributors
             </button>
             <button 
+              onClick={() => setActiveTab('telemedicine')}
+              className={activeTab === 'telemedicine' ? 'active' : ''}
+            >
+              <Video className="w-4 h-4" />
+              Telemedicine
+            </button>
+            <button 
               onClick={() => setActiveTab('records')}
               className={activeTab === 'records' ? 'active' : ''}
             >
@@ -368,6 +376,7 @@ function App() {
             {activeTab === 'records' && <MedicalRecordManager account={account} contract={contract} />}
             {activeTab === 'security' && <MFASystem account={account} contract={contract} />}
             {activeTab === 'emergency' && <EmergencyAccess account={account} />}
+            {activeTab === 'telemedicine' && <TelemedicineDashboard user={user} account={account} />}
             {activeTab === 'engine' && <ClaimEngine account={account} contract={contract} />}
             {activeTab === 'payments' && <PaymentGateways account={account} contract={contract} />}
           </>
