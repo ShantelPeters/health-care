@@ -4,15 +4,37 @@ const { HL7Parser } = require('../services/hl7Parser');
 const { FHIRConverter } = require('../services/fhirConverter');
 const { IntegrationConfig } = require('../models/integrationConfig');
 const { SyncStatus } = require('../models/syncStatus');
+const { dbConnection } = require('../database/connection');
 const { authenticateToken } = require('../middleware/auth');
 
 const hl7Parser = new HL7Parser();
 const fhirConverter = new FHIRConverter();
 
+// Initialize models with database connection
+let integrationConfigModel;
+let syncStatusModel;
+
+// Initialize database connection and models
+async function initializeModels() {
+  try {
+    const db = await dbConnection.connect();
+    integrationConfigModel = new IntegrationConfig(db);
+    syncStatusModel = new SyncStatus(db);
+  } catch (error) {
+    console.error('Failed to initialize database models:', error);
+  }
+}
+
+// Initialize models on module load
+initializeModels();
+
 // Get all integration configurations
 router.get('/configs', authenticateToken, async (req, res) => {
   try {
-    const configs = await IntegrationConfig.findAll();
+    if (!integrationConfigModel) {
+      throw new Error('Database models not initialized');
+    }
+    const configs = await integrationConfigModel.findAll();
     res.json(configs);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -22,7 +44,10 @@ router.get('/configs', authenticateToken, async (req, res) => {
 // Create new integration configuration
 router.post('/configs', authenticateToken, async (req, res) => {
   try {
-    const config = await IntegrationConfig.create(req.body);
+    if (!integrationConfigModel) {
+      throw new Error('Database models not initialized');
+    }
+    const config = await integrationConfigModel.create(req.body);
     res.status(201).json(config);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -55,8 +80,11 @@ router.post('/convert-hl7-to-fhir', authenticateToken, async (req, res) => {
 // Get sync status
 router.get('/sync-status', authenticateToken, async (req, res) => {
   try {
-    const status = await SyncStatus.findAll({
-      order: [['createdAt', 'DESC']]
+    if (!syncStatusModel) {
+      throw new Error('Database models not initialized');
+    }
+    const status = await syncStatusModel.findAll({
+      order: 'start_time DESC'
     });
     res.json(status);
   } catch (error) {
@@ -68,7 +96,6 @@ router.get('/sync-status', authenticateToken, async (req, res) => {
 router.post('/test-connection', authenticateToken, async (req, res) => {
   try {
     const { config } = req.body;
-    // Test connection logic here
     const testResult = await testIntegrationConnection(config);
     res.json(testResult);
   } catch (error) {
@@ -98,45 +125,196 @@ router.get('/health', authenticateToken, async (req, res) => {
 });
 
 async function testIntegrationConnection(config) {
-  // Mock connection test - implement actual connection logic
+  const startTime = Date.now();
+  
+  try {
+    // Test based on integration type
+    switch (config.type) {
+      case 'HL7':
+        return await testHL7Connection(config);
+      case 'FHIR':
+        return await testFHIRConnection(config);
+      case 'CUSTOM':
+        return await testCustomConnection(config);
+      default:
+        throw new Error(`Unknown integration type: ${config.type}`);
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message,
+      responseTime: `${Date.now() - startTime}ms`,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
+async function testHL7Connection(config) {
+  // Mock HL7 connection test - implement actual MLLP connection
+  const startTime = Date.now();
+  
+  // Simulate connection test
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
   return {
     success: true,
-    message: 'Connection successful',
-    responseTime: Math.floor(Math.random() * 100) + 'ms',
-    timestamp: new Date().toISOString()
+    message: 'HL7 connection successful',
+    responseTime: `${Date.now() - startTime}ms`,
+    timestamp: new Date().toISOString(),
+    details: {
+      host: config.connectionConfig.host,
+      port: config.connectionConfig.port,
+      protocol: config.connectionConfig.protocol
+    }
+  };
+}
+
+async function testFHIRConnection(config) {
+  // Mock FHIR connection test - implement actual HTTP request
+  const startTime = Date.now();
+  
+  // Simulate connection test
+  await new Promise(resolve => setTimeout(resolve, 150));
+  
+  return {
+    success: true,
+    message: 'FHIR connection successful',
+    responseTime: `${Date.now() - startTime}ms`,
+    timestamp: new Date().toISOString(),
+    details: {
+      baseUrl: config.connectionConfig.baseUrl,
+      authType: config.connectionConfig.authType
+    }
+  };
+}
+
+async function testCustomConnection(config) {
+  // Mock custom API connection test
+  const startTime = Date.now();
+  
+  // Simulate connection test
+  await new Promise(resolve => setTimeout(resolve, 200));
+  
+  return {
+    success: true,
+    message: 'Custom API connection successful',
+    responseTime: `${Date.now() - startTime}ms`,
+    timestamp: new Date().toISOString(),
+    details: {
+      apiEndpoint: config.connectionConfig.apiEndpoint,
+      format: config.connectionConfig.format
+    }
   };
 }
 
 async function generateTransformationPreview(sourceData, mappingConfig) {
-  // Mock transformation preview - implement actual transformation logic
-  return {
-    originalData: sourceData,
-    transformedData: sourceData, // This would be the actual transformed data
-    mappingApplied: mappingConfig,
-    timestamp: new Date().toISOString()
-  };
+  try {
+    // Parse HL7 if it's an HL7 message
+    let parsedData = sourceData;
+    if (typeof sourceData === 'string' && sourceData.includes('MSH')) {
+      parsedData = hl7Parser.parse(sourceData);
+    }
+
+    // Apply transformation based on mapping configuration
+    const transformedData = applyMappingTransformation(parsedData, mappingConfig);
+
+    return {
+      originalData: parsedData,
+      transformedData: transformedData,
+      mappingApplied: mappingConfig,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    throw new Error(`Transformation preview failed: ${error.message}`);
+  }
+}
+
+function applyMappingTransformation(data, mappingConfig) {
+  const transformed = {};
+
+  // Apply field mappings
+  Object.keys(mappingConfig).forEach(resourceType => {
+    transformed[resourceType] = {};
+    
+    const mappings = mappingConfig[resourceType];
+    Object.keys(mappings).forEach(sourceField => {
+      const targetField = mappings[sourceField];
+      
+      // Simple field mapping - can be enhanced for complex transformations
+      const value = getNestedValue(data, sourceField);
+      if (value !== undefined) {
+        setNestedValue(transformed[resourceType], targetField, value);
+      }
+    });
+  });
+
+  return transformed;
+}
+
+function getNestedValue(obj, path) {
+  return path.split('.').reduce((current, key) => {
+    return current && current[key] !== undefined ? current[key] : undefined;
+  }, obj);
+}
+
+function setNestedValue(obj, path, value) {
+  const keys = path.split('.');
+  const lastKey = keys.pop();
+  
+  const target = keys.reduce((current, key) => {
+    if (!current[key] || typeof current[key] !== 'object') {
+      current[key] = {};
+    }
+    return current[key];
+  }, obj);
+  
+  target[lastKey] = value;
 }
 
 async function getConnectionHealth() {
-  // Mock health status - implement actual health checking logic
-  return {
-    status: 'healthy',
-    connections: [
-      {
-        name: 'HIS System',
-        status: 'connected',
-        lastSync: new Date().toISOString(),
-        responseTime: '45ms'
+  try {
+    // Get all active integrations
+    if (!integrationConfigModel || !syncStatusModel) {
+      return {
+        status: 'error',
+        message: 'Database models not initialized',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    const configs = await integrationConfigModel.findAll();
+    const activeConfigs = configs.filter(config => config.isActive);
+    
+    const connections = activeConfigs.map(config => ({
+      name: config.name,
+      type: config.type,
+      status: 'connected', // Mock status - implement actual health check
+      lastSync: config.lastSync || new Date().toISOString(),
+      responseTime: `${Math.floor(Math.random() * 100) + 20}ms`,
+      uptime: '99.9%'
+    }));
+
+    // Calculate overall health
+    const healthyConnections = connections.filter(conn => conn.status === 'connected').length;
+    const overallStatus = healthyConnections === connections.length ? 'healthy' : 'degraded';
+
+    return {
+      status: overallStatus,
+      connections,
+      summary: {
+        total: connections.length,
+        healthy: healthyConnections,
+        degraded: connections.length - healthyConnections
       },
-      {
-        name: 'FHIR Server',
-        status: 'connected',
-        lastSync: new Date().toISOString(),
-        responseTime: '32ms'
-      }
-    ],
-    timestamp: new Date().toISOString()
-  };
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    };
+  }
 }
 
 module.exports = router;

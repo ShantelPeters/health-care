@@ -72,7 +72,10 @@ app.get('/api/health', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-
+  console.log('Client connected:', socket.id);
+  
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
   });
 });
 
@@ -82,6 +85,10 @@ async function startServer() {
   try {
     await initializeDatabase();
 
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Health check available at http://localhost:${PORT}/api/health`);
+      console.log(`HL7/FHIR API available at http://localhost:${PORT}/api/hl7-fhir`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
